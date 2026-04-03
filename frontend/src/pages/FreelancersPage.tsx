@@ -2,30 +2,32 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { usePrivy } from '@privy-io/react-auth';
 import { useProfile } from '../hooks/useProfile';
+import { supabase } from '../lib/supabase';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 
 interface FreelancerProfile {
   userId: string;
   displayName: string;
+  nickname?: string;
   bio?: string;
   starknetAddress: string;
   role: string;
 }
 
-function getAllFreelancers(): FreelancerProfile[] {
-  const profiles: FreelancerProfile[] = [];
-  for (let i = 0; i < localStorage.length; i++) {
-    const key = localStorage.key(i);
-    if (!key?.startsWith('escrowhub_profile_')) continue;
-    try {
-      const p = JSON.parse(localStorage.getItem(key) ?? '');
-      if (p?.role === 'freelancer') {
-        profiles.push({ ...p, userId: key.replace('escrowhub_profile_', '') });
-      }
-    } catch { /* skip */ }
+async function getAllFreelancers(): Promise<FreelancerProfile[]> {
+  try {
+    const { data, error } = await supabase
+      .from('escrowhub_profiles')
+      .select('*')
+      .eq('role', 'freelancer');
+    
+    if (error) throw error;
+    return data || [];
+  } catch (err) {
+    console.error('[FreelancersPage] Error fetching freelancers:', err);
+    return [];
   }
-  return profiles;
 }
 
 function shortAddr(addr: string) {
@@ -47,11 +49,14 @@ export default function FreelancersPage() {
   const isClient = profile?.role === 'client';
 
   const [freelancers, setFreelancers] = useState<FreelancerProfile[]>([]);
-  const [search, setSearch] = useState('');
-  const [copied, setCopied] = useState<string | null>(null);
+  const [loading, setLoading]         = useState(true);
+  const [search, setSearch]           = useState('');
+  const [copied, setCopied]           = useState<string | null>(null);
 
   useEffect(() => {
-    setFreelancers(getAllFreelancers());
+    getAllFreelancers()
+      .then(setFreelancers)
+      .finally(() => setLoading(false));
   }, []);
 
   function copyAddress(addr: string) {
@@ -63,7 +68,11 @@ export default function FreelancersPage() {
   const filtered = freelancers.filter(f => {
     if (!search) return true;
     const q = search.toLowerCase();
-    return f.displayName.toLowerCase().includes(q) || f.bio?.toLowerCase().includes(q);
+    return (
+      f.displayName.toLowerCase().includes(q) ||
+      f.bio?.toLowerCase().includes(q) ||
+      f.nickname?.toLowerCase().includes(q)
+    );
   });
 
   return (
@@ -75,7 +84,7 @@ export default function FreelancersPage() {
           <div>
             <h1 className="text-2xl font-extrabold text-gray-50">Freelancers</h1>
             <p className="mt-1 text-sm text-gray-500">
-              {filtered.length} registered freelancer{filtered.length !== 1 ? 's' : ''} on EscrowHub
+              {loading ? 'Loading…' : `${filtered.length} registered freelancer${filtered.length !== 1 ? 's' : ''} on EscrowHub`}
             </p>
           </div>
           {isClient && (
@@ -94,12 +103,19 @@ export default function FreelancersPage() {
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Search by name or bio…"
+            placeholder="Search by name, handle, or bio…"
             className="input-dark pl-10"
           />
         </div>
 
-        {filtered.length === 0 ? (
+        {loading ? (
+          <div className="flex justify-center py-20">
+            <svg className="animate-spin h-7 w-7 text-brand-500" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="feature-card p-16 text-center">
             <div className="w-12 h-12 rounded-2xl bg-brand-500/10 border border-brand-500/20 flex items-center justify-center mx-auto mb-4">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth="1.5">
@@ -125,7 +141,12 @@ export default function FreelancersPage() {
                     </div>
                     <div className="min-w-0">
                       <p className="font-semibold text-gray-100 truncate">{f.displayName}</p>
-                      <p className="text-xs text-gray-500">Freelancer</p>
+                      {f.nickname && (
+                        <p className="text-xs text-brand-400">@{f.nickname}</p>
+                      )}
+                      {!f.nickname && (
+                        <p className="text-xs text-gray-500">Freelancer</p>
+                      )}
                     </div>
                   </div>
 
@@ -154,7 +175,7 @@ export default function FreelancersPage() {
 
                     {isClient && (
                       <Link
-                        to={`/dashboard/create?freelancer=${f.starknetAddress}`}
+                        to={`/dashboard/create?freelancer=${f.starknetAddress}&freelancerName=${encodeURIComponent(f.displayName)}`}
                         className="shrink-0 text-xs font-semibold text-brand-400 hover:text-brand-300 transition-colors px-2.5 py-1.5 rounded-lg border border-brand-500/20 hover:border-brand-500/40 hover:bg-brand-500/5"
                       >
                         Hire →

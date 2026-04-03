@@ -1,6 +1,9 @@
 // ============================================================
-// EscrowHub — localStorage-backed job marketplace + contract offers
+// EscrowHub — Supabase-backed job marketplace + contract offers
+// All data is shared across users in real time.
 // ============================================================
+
+import { supabase } from './supabase';
 
 export type JobStatus = 'open' | 'in_progress' | 'completed' | 'cancelled';
 export type AppStatus = 'pending' | 'accepted' | 'rejected';
@@ -36,7 +39,6 @@ export interface Job {
   applications: JobApplication[];
 }
 
-// A direct contract offer from client to a specific freelancer
 export interface MilestoneOffer {
   description: string;
   amount: string;
@@ -62,159 +64,363 @@ export interface ContractOffer {
   createdAt: string;
 }
 
-// ── Keys ──────────────────────────────────────────────────────────────────────
-
-const JOBS_KEY   = 'escrowhub_jobs_v1';
-const OFFERS_KEY = 'escrowhub_offers_v1';
-
-// ── Storage helpers ───────────────────────────────────────────────────────────
-
-function readJobs(): Job[] {
-  try { return JSON.parse(localStorage.getItem(JOBS_KEY) ?? '[]'); } catch { return []; }
-}
-function writeJobs(jobs: Job[]) { localStorage.setItem(JOBS_KEY, JSON.stringify(jobs)); }
-
-function readOffers(): ContractOffer[] {
-  try { return JSON.parse(localStorage.getItem(OFFERS_KEY) ?? '[]'); } catch { return []; }
-}
-function writeOffers(offers: ContractOffer[]) { localStorage.setItem(OFFERS_KEY, JSON.stringify(offers)); }
-
-// ── Marketplace API ───────────────────────────────────────────────────────────
+const JOBS_TABLE = 'escrowhub_jobs';
+const OFFERS_TABLE = 'escrowhub_offers';
 
 export const marketplace = {
 
   // ─── Jobs ────────────────────────────────────────────────────────────────
 
-  getJobs(): Job[] { return readJobs(); },
-  getOpenJobs(): Job[] { return readJobs().filter(j => j.status === 'open'); },
-  getJobById(id: string): Job | null { return readJobs().find(j => j.id === id) ?? null; },
-  getJobsByClient(clientId: string): Job[] { return readJobs().filter(j => j.clientId === clientId); },
+  async getJobs(): Promise<Job[]> {
+    try {
+      const { data, error } = await supabase
+        .from(JOBS_TABLE)
+        .select('*')
+        .order('createdAt', { ascending: false });
+      
+      if (error) throw error;
+      return (data || []).map(d => ({
+        ...d,
+        skills: d.skills || [],
+        applications: d.applications || [],
+      }));
+    } catch (err) {
+      console.error('[Marketplace] Error fetching jobs:', err);
+      return [];
+    }
+  },
 
-  getApplicationsByFreelancer(freelancerId: string): (JobApplication & { jobTitle: string })[] {
-    return readJobs().flatMap(j =>
-      j.applications
+  async getOpenJobs(): Promise<Job[]> {
+    try {
+      const { data, error } = await supabase
+        .from(JOBS_TABLE)
+        .select('*')
+        .eq('status', 'open')
+        .order('createdAt', { ascending: false });
+      
+      if (error) throw error;
+      return (data || []).map(d => ({
+        ...d,
+        skills: d.skills || [],
+        applications: d.applications || [],
+      }));
+    } catch (err) {
+      console.error('[Marketplace] Error fetching open jobs:', err);
+      const all = await this.getJobs();
+      return all.filter(j => j.status === 'open');
+    }
+  },
+
+  async getJobById(id: string): Promise<Job | null> {
+    try {
+      const { data, error } = await supabase
+        .from(JOBS_TABLE)
+        .select('*')
+        .eq('id', id)
+        .single();
+      
+      if (error) return null;
+      return {
+        ...data,
+        skills: data.skills || [],
+        applications: data.applications || [],
+      };
+    } catch {
+      return null;
+    }
+  },
+
+  async getJobsByClient(clientId: string): Promise<Job[]> {
+    try {
+      const { data, error } = await supabase
+        .from(JOBS_TABLE)
+        .select('*')
+        .eq('clientId', clientId)
+        .order('createdAt', { ascending: false });
+      
+      if (error) throw error;
+      return (data || []).map(d => ({
+        ...d,
+        skills: d.skills || [],
+        applications: d.applications || [],
+      }));
+    } catch {
+      return [];
+    }
+  },
+
+  async getApplicationsByFreelancer(
+    freelancerId: string,
+  ): Promise<(JobApplication & { jobTitle: string })[]> {
+    const jobs = await this.getJobs();
+    return jobs.flatMap(j =>
+      (j.applications || [])
         .filter(a => a.freelancerId === freelancerId)
-        .map(a => ({ ...a, jobTitle: j.title }))
+        .map(a => ({ ...a, jobTitle: j.title })),
     );
   },
 
-  postJob(data: Omit<Job, 'id' | 'createdAt' | 'applications' | 'status'>, callerRole?: string): Job | null {
+  async postJob(
+    data: Omit<Job, 'id' | 'createdAt' | 'applications' | 'status'>,
+    callerRole?: string,
+  ): Promise<Job | null> {
     if (callerRole && callerRole !== 'client') return null;
-    const jobs = readJobs();
-    const job: Job = { ...data, id: crypto.randomUUID(), status: 'open', applications: [], createdAt: new Date().toISOString() };
-    writeJobs([job, ...jobs]);
-    return job;
+    
+    const payload = {
+      ...data,
+      status: 'open',
+      applications: [],
+      createdAt: new Date().toISOString(),
+    };
+
+    try {
+      const { data: inserted, error } = await supabase
+        .from(JOBS_TABLE)
+        .insert(payload)
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return inserted;
+    } catch (err) {
+      console.error('[Marketplace] Error posting job:', err);
+      return null;
+    }
   },
 
-  applyToJob(
+  async applyToJob(
     jobId: string,
     data: Omit<JobApplication, 'id' | 'jobId' | 'status' | 'createdAt'>,
     callerRole?: string,
-  ): JobApplication | null {
-    // Only freelancers may apply
+  ): Promise<JobApplication | null> {
     if (callerRole && callerRole !== 'freelancer') return null;
-    const jobs = readJobs();
-    const idx = jobs.findIndex(j => j.id === jobId);
-    if (idx === -1) return null;
-    // Prevent the job owner from applying to their own job
-    if (jobs[idx].clientId === data.freelancerId) return null;
-    // One application per freelancer per job
-    if (jobs[idx].applications.some(a => a.freelancerId === data.freelancerId)) return null;
-    const app: JobApplication = { ...data, id: crypto.randomUUID(), jobId, status: 'pending', createdAt: new Date().toISOString() };
-    jobs[idx].applications.push(app);
-    writeJobs(jobs);
-    return app;
+    
+    const job = await this.getJobById(jobId);
+    if (!job) return null;
+    if (job.clientId === data.freelancerId) return null;
+    
+    const apps = job.applications || [];
+    if (apps.some(a => a.freelancerId === data.freelancerId)) return null;
+
+    const newApp: JobApplication = {
+      ...data,
+      id: crypto.randomUUID(),
+      jobId,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+    };
+
+    try {
+      const { error } = await supabase
+        .from(JOBS_TABLE)
+        .update({ applications: [...apps, newApp] })
+        .eq('id', jobId);
+      
+      if (error) throw error;
+      return newApp;
+    } catch (err) {
+      console.error('[Marketplace] Error applying to job:', err);
+      return null;
+    }
   },
 
-  acceptApplication(jobId: string, appId: string, callerId?: string): Job | null {
-    const jobs = readJobs();
-    const idx = jobs.findIndex(j => j.id === jobId);
-    if (idx === -1) return null;
-    // Only the job owner (client) may accept applications
-    if (callerId && jobs[idx].clientId !== callerId) return null;
-    jobs[idx].applications = jobs[idx].applications.map(a => ({
-      ...a, status: a.id === appId ? 'accepted' : 'rejected',
-    }));
-    jobs[idx].status = 'in_progress';
-    writeJobs(jobs);
-    return jobs[idx];
-  },
+  async acceptApplication(
+    jobId: string,
+    appId: string,
+    callerId?: string,
+  ): Promise<Job | null> {
+    const job = await this.getJobById(jobId);
+    if (!job) return null;
+    if (callerId && job.clientId !== callerId) return null;
 
-  rejectApplication(jobId: string, appId: string, callerId?: string): void {
-    const jobs = readJobs();
-    const idx = jobs.findIndex(j => j.id === jobId);
-    if (idx === -1) return;
-    // Only the job owner (client) may reject applications
-    if (callerId && jobs[idx].clientId !== callerId) return;
-    jobs[idx].applications = jobs[idx].applications.map(a =>
-      a.id === appId ? { ...a, status: 'rejected' } : a
+    const apps = (job.applications || []).map(
+      (a: JobApplication) => ({ ...a, status: a.id === appId ? 'accepted' : 'rejected' }),
     );
-    writeJobs(jobs);
+
+    try {
+      const { data: updated, error } = await supabase
+        .from(JOBS_TABLE)
+        .update({ applications: apps, status: 'in_progress' })
+        .eq('id', jobId)
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return updated;
+    } catch (err) {
+      console.error('[Marketplace] Error accepting application:', err);
+      return null;
+    }
   },
 
-  markCompleted(jobId: string): void {
-    const jobs = readJobs();
-    const idx = jobs.findIndex(j => j.id === jobId);
-    if (idx !== -1) { jobs[idx].status = 'completed'; writeJobs(jobs); }
+  async rejectApplication(
+    jobId: string,
+    appId: string,
+    callerId?: string,
+  ): Promise<void> {
+    const job = await this.getJobById(jobId);
+    if (!job) return;
+    if (callerId && job.clientId !== callerId) return;
+
+    const apps = (job.applications || []).map(
+      (a: JobApplication) => a.id === appId ? { ...a, status: 'rejected' } : a,
+    );
+
+    try {
+      await supabase
+        .from(JOBS_TABLE)
+        .update({ applications: apps })
+        .eq('id', jobId);
+    } catch (err) {
+      console.error('[Marketplace] Error rejecting application:', err);
+    }
   },
 
-  cancelJob(jobId: string): void {
-    const jobs = readJobs();
-    const idx = jobs.findIndex(j => j.id === jobId);
-    if (idx !== -1) { jobs[idx].status = 'cancelled'; writeJobs(jobs); }
+  async markCompleted(jobId: string): Promise<void> {
+    try {
+      await supabase.from(JOBS_TABLE).update({ status: 'completed' }).eq('id', jobId);
+    } catch {}
   },
 
-  // ─── Contract Offers (client → freelancer direct) ────────────────────────
-
-  getOffers(): ContractOffer[] { return readOffers(); },
-
-  getOffersForFreelancer(freelancerId: string): ContractOffer[] {
-    return readOffers().filter(o => o.freelancerId === freelancerId);
+  async cancelJob(jobId: string): Promise<void> {
+    try {
+      await supabase.from(JOBS_TABLE).update({ status: 'cancelled' }).eq('id', jobId);
+    } catch {}
   },
 
-  getOffersByClient(clientId: string): ContractOffer[] {
-    return readOffers().filter(o => o.clientId === clientId);
+  // ─── Contract Offers ─────────────────────────────────────────────────────
+
+  async getOffers(): Promise<ContractOffer[]> {
+    try {
+      const { data, error } = await supabase
+        .from(OFFERS_TABLE)
+        .select('*')
+        .order('createdAt', { ascending: false });
+      
+      if (error) throw error;
+      return data || [];
+    } catch {
+      return [];
+    }
   },
 
-  getOfferById(id: string): ContractOffer | null {
-    return readOffers().find(o => o.id === id) ?? null;
+  async getOffersForFreelancer(freelancerId: string): Promise<ContractOffer[]> {
+    try {
+      const { data, error } = await supabase
+        .from(OFFERS_TABLE)
+        .select('*')
+        .eq('freelancerId', freelancerId)
+        .order('createdAt', { ascending: false });
+      
+      if (error) throw error;
+      return data || [];
+    } catch {
+      return [];
+    }
   },
 
-  sendOffer(data: Omit<ContractOffer, 'id' | 'createdAt' | 'status'>, callerRole?: string): ContractOffer | null {
-    // Only clients may send offers
+  async getOffersByClient(clientId: string): Promise<ContractOffer[]> {
+    try {
+      const { data, error } = await supabase
+        .from(OFFERS_TABLE)
+        .select('*')
+        .eq('clientId', clientId)
+        .order('createdAt', { ascending: false });
+      
+      if (error) throw error;
+      return data || [];
+    } catch {
+      return [];
+    }
+  },
+
+  async getOfferById(id: string): Promise<ContractOffer | null> {
+    try {
+      const { data, error } = await supabase
+        .from(OFFERS_TABLE)
+        .select('*')
+        .eq('id', id)
+        .single();
+      
+      if (error) return null;
+      return data;
+    } catch {
+      return null;
+    }
+  },
+
+  async sendOffer(
+    data: Omit<ContractOffer, 'id' | 'createdAt' | 'status'>,
+    callerRole?: string,
+  ): Promise<ContractOffer | null> {
     if (callerRole && callerRole !== 'client') return null;
-    // Cannot send an offer to yourself
     if (data.clientId === data.freelancerId) return null;
-    const offers = readOffers();
-    const offer: ContractOffer = { ...data, id: crypto.randomUUID(), status: 'pending', createdAt: new Date().toISOString() };
-    writeOffers([offer, ...offers]);
-    return offer;
+
+    const payload = {
+      ...data,
+      status: 'pending',
+      createdAt: new Date().toISOString(),
+    };
+
+    try {
+      const { data: inserted, error } = await supabase
+        .from(OFFERS_TABLE)
+        .insert(payload)
+        .select()
+        .single();
+      
+      if (error) throw error;
+      return inserted;
+    } catch (err) {
+      console.error('[Marketplace] Error sending offer:', err);
+      return null;
+    }
   },
 
-  acceptOffer(offerId: string, callerId?: string): ContractOffer | null {
-    const offers = readOffers();
-    const idx = offers.findIndex(o => o.id === offerId);
-    if (idx === -1) return null;
-    // Only the intended freelancer may accept
-    if (callerId && offers[idx].freelancerId !== callerId) return null;
-    offers[idx].status = 'accepted';
-    writeOffers(offers);
-    return offers[idx];
+  async acceptOffer(offerId: string, callerId?: string): Promise<ContractOffer | null> {
+    try {
+      const { data, error: fetchError } = await supabase
+        .from(OFFERS_TABLE)
+        .select('*')
+        .eq('id', offerId)
+        .single();
+      
+      if (fetchError || !data) return null;
+      if (callerId && data.freelancerId !== callerId) return null;
+
+      const { data: updated, error: updateError } = await supabase
+        .from(OFFERS_TABLE)
+        .update({ status: 'accepted' })
+        .eq('id', offerId)
+        .select()
+        .single();
+      
+      if (updateError) throw updateError;
+      return updated;
+    } catch (err) {
+      console.error('[Marketplace] Error accepting offer:', err);
+      return null;
+    }
   },
 
-  declineOffer(offerId: string, callerId?: string): void {
-    const offers = readOffers();
-    const idx = offers.findIndex(o => o.id === offerId);
-    if (idx === -1) return;
-    // Only the intended freelancer may decline
-    if (callerId && offers[idx].freelancerId !== callerId) return;
-    offers[idx].status = 'declined';
-    writeOffers(offers);
+  async declineOffer(offerId: string, callerId?: string): Promise<void> {
+    try {
+      const { data } = await supabase
+        .from(OFFERS_TABLE)
+        .select('freelancerId')
+        .eq('id', offerId)
+        .single();
+      
+      if (!data) return;
+      if (callerId && data.freelancerId !== callerId) return;
+
+      await supabase.from(OFFERS_TABLE).update({ status: 'declined' }).eq('id', offerId);
+    } catch {}
   },
 
-  markOfferContracted(offerId: string): void {
-    const offers = readOffers();
-    const idx = offers.findIndex(o => o.id === offerId);
-    if (idx !== -1) { offers[idx].status = 'contracted'; writeOffers(offers); }
+  async markOfferContracted(offerId: string): Promise<void> {
+    try {
+      await supabase.from(OFFERS_TABLE).update({ status: 'contracted' }).eq('id', offerId);
+    } catch {}
   },
 };

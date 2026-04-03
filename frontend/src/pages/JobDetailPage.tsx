@@ -27,18 +27,38 @@ export default function JobDetailPage() {
   const { profile } = useProfile(user?.id ?? null);
   const { starknetAddress } = useWallet();
 
-  const [job, setJob] = useState<Job | null>(null);
-  const [proposal, setProposal] = useState('');
-  const [rate, setRate] = useState('');
-  const [applying, setApplying] = useState(false);
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [job, setJob]               = useState<Job | null>(null);
+  const [jobLoading, setJobLoading] = useState(true);
+  const [proposal, setProposal]     = useState('');
+  const [rate, setRate]             = useState('');
+  const [applying, setApplying]     = useState(false);
+  const [errors, setErrors]         = useState<Record<string, string>>({});
   const [showApplyForm, setShowApplyForm] = useState(false);
 
-  function reload() {
-    if (id) setJob(marketplace.getJobById(id));
+  async function reload() {
+    if (!id) return;
+    setJobLoading(true);
+    const j = await marketplace.getJobById(id);
+    setJob(j);
+    setJobLoading(false);
   }
 
   useEffect(() => { reload(); }, [id]);
+
+  if (jobLoading) {
+    return (
+      <div className="min-h-screen flex flex-col bg-[#09090f]">
+        <Navbar />
+        <div className="flex-1 flex items-center justify-center">
+          <svg className="animate-spin h-7 w-7 text-brand-500" viewBox="0 0 24 24" fill="none">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
 
   if (!job) {
     return (
@@ -70,7 +90,7 @@ export default function JobDetailPage() {
     return Object.keys(errs).length === 0;
   }
 
-  function handleApply(e: React.FormEvent) {
+  async function handleApply(e: React.FormEvent) {
     e.preventDefault();
     if (!validateApply() || !user?.id) return;
 
@@ -78,7 +98,7 @@ export default function JobDetailPage() {
       | { name: string | null } | undefined;
 
     setApplying(true);
-    marketplace.applyToJob(job!.id, {
+    await marketplace.applyToJob(job!.id, {
       freelancerId: user.id,
       freelancerName: profile?.displayName ?? googleAccount?.name ?? 'Freelancer',
       freelancerAddress,
@@ -87,17 +107,17 @@ export default function JobDetailPage() {
     }, profile?.role);
     setApplying(false);
     setShowApplyForm(false);
-    reload();
+    await reload();
   }
 
-  function handleAccept(app: JobApplication) {
-    marketplace.acceptApplication(job!.id, app.id, user?.id);
-    reload();
+  async function handleAccept(app: JobApplication) {
+    await marketplace.acceptApplication(job!.id, app.id, user?.id);
+    await reload();
   }
 
-  function handleReject(app: JobApplication) {
-    marketplace.rejectApplication(job!.id, app.id, user?.id);
-    reload();
+  async function handleReject(app: JobApplication) {
+    await marketplace.rejectApplication(job!.id, app.id, user?.id);
+    await reload();
   }
 
   function handleHire(app: JobApplication) {

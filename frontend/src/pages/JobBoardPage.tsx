@@ -41,14 +41,23 @@ export default function JobBoardPage() {
   const { user } = usePrivy();
   const { profile } = useProfile(user?.id ?? null);
 
-  const [jobs, setJobs] = useState<Job[]>([]);
-  const [search, setSearch] = useState('');
+  const [jobs, setJobs]         = useState<Job[]>([]);
+  const [loadingJobs, setLoadingJobs] = useState(true);
+  const [search, setSearch]     = useState('');
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('open');
-  const [filterSkill, setFilterSkill] = useState('');
-  const [sortBy, setSortBy] = useState<SortBy>('newest');
+  const [filterSkill, setFilterSkill]   = useState('');
+  const [sortBy, setSortBy]     = useState<SortBy>('newest');
 
   useEffect(() => {
-    setJobs(marketplace.getJobs());
+    marketplace.getJobs()
+      .then(j => {
+        setJobs(j);
+        setLoadingJobs(false);
+      })
+      .catch(err => {
+        console.error('Failed to fetch jobs:', err);
+        setLoadingJobs(false);
+      });
   }, []);
 
   const allSkills = [...new Set(jobs.flatMap(j => j.skills))].sort();
@@ -177,7 +186,14 @@ export default function JobBoardPage() {
               />
             </div>
 
-            {filtered.length === 0 ? (
+            {loadingJobs ? (
+              <div className="flex justify-center py-20">
+                <svg className="animate-spin h-7 w-7 text-brand-500" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              </div>
+            ) : filtered.length === 0 ? (
               <div className="feature-card p-12 text-center">
                 <div className="w-12 h-12 rounded-2xl bg-brand-500/10 border border-brand-500/20 flex items-center justify-center mx-auto mb-4">
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth="1.5">

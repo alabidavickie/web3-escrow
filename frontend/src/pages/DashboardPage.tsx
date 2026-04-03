@@ -85,11 +85,11 @@ export default function DashboardPage() {
   }, [resolvedAddress]);
 
   useEffect(() => {
-    if (!user?.id) return;
-    if (profile?.role === 'freelancer') {
-      setOffers(marketplace.getOffersForFreelancer(user.id));
-    } else if (profile?.role === 'client') {
-      setOffers(marketplace.getOffersByClient(user.id));
+    if (!user?.id || !profile?.role) return;
+    if (profile.role === 'freelancer') {
+      marketplace.getOffersForFreelancer(user.id).then(setOffers);
+    } else if (profile.role === 'client') {
+      marketplace.getOffersByClient(user.id).then(setOffers);
     }
   }, [user?.id, profile?.role]);
 
@@ -137,11 +137,10 @@ export default function DashboardPage() {
     setConnecting(false);
   }
 
-  function handleAcceptOffer(offer: ContractOffer) {
-    const result = marketplace.acceptOffer(offer.id, user?.id);
-    if (!result) return; // ownership check failed
+  async function handleAcceptOffer(offer: ContractOffer) {
+    const result = await marketplace.acceptOffer(offer.id, user?.id);
+    if (!result) return;
     setOffers(prev => prev.map(o => o.id === offer.id ? { ...o, status: 'accepted' } : o));
-    // Navigate to create on-chain contract with offer details pre-filled
     const params = new URLSearchParams({
       freelancer: offer.freelancerAddress,
       freelancerName: offer.freelancerName,
@@ -151,8 +150,8 @@ export default function DashboardPage() {
     navigate(`/dashboard/create?${params.toString()}`);
   }
 
-  function handleDeclineOffer(offerId: string) {
-    marketplace.declineOffer(offerId, user?.id);
+  async function handleDeclineOffer(offerId: string) {
+    await marketplace.declineOffer(offerId, user?.id);
     setOffers(prev => prev.map(o => o.id === offerId ? { ...o, status: 'declined' } : o));
   }
 

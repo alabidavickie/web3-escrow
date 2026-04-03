@@ -64,7 +64,7 @@ export default function PostJobPage() {
     return Object.keys(errs).length === 0;
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!validate() || !user?.id) return;
     setSubmitting(true);
@@ -72,7 +72,7 @@ export default function PostJobPage() {
     const googleAccount = user.linkedAccounts?.find((a: { type: string }) => a.type === 'google_oauth') as
       | { name: string | null } | undefined;
 
-    const posted = marketplace.postJob({
+    const posted = await marketplace.postJob({
       clientId: user.id,
       clientName: profile?.displayName ?? googleAccount?.name ?? 'Client',
       clientAddress,
@@ -86,7 +86,7 @@ export default function PostJobPage() {
       deadline,
     }, profile?.role);
 
-    if (!posted) { setSubmitting(false); return; } // role check failed (shouldn't happen via UI)
+    if (!posted) { setSubmitting(false); return; }
 
     navigate('/jobs', { replace: true });
   }

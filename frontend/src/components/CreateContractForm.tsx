@@ -130,7 +130,7 @@ export default function CreateContractForm() {
 
     if (result) {
       // Mark job as in_progress if created from a job application
-      if (prefillJobId) marketplace.markCompleted(prefillJobId);
+      if (prefillJobId) marketplace.markCompleted(prefillJobId).catch(() => {});
 
       const total = milestones.reduce(
         (s, m) => s + parseTokenAmount(m.amount, selectedToken.decimals), 0n
