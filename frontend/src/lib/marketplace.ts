@@ -98,17 +98,27 @@ export const marketplace = {
     );
   },
 
-  postJob(data: Omit<Job, 'id' | 'createdAt' | 'applications' | 'status'>): Job {
+  postJob(data: Omit<Job, 'id' | 'createdAt' | 'applications' | 'status'>, callerRole?: string): Job | null {
+    if (callerRole && callerRole !== 'client') return null;
     const jobs = readJobs();
     const job: Job = { ...data, id: crypto.randomUUID(), status: 'open', applications: [], createdAt: new Date().toISOString() };
     writeJobs([job, ...jobs]);
     return job;
   },
 
-  applyToJob(jobId: string, data: Omit<JobApplication, 'id' | 'jobId' | 'status' | 'createdAt'>): JobApplication | null {
+  applyToJob(
+    jobId: string,
+    data: Omit<JobApplication, 'id' | 'jobId' | 'status' | 'createdAt'>,
+    callerRole?: string,
+  ): JobApplication | null {
+    // Only freelancers may apply
+    if (callerRole && callerRole !== 'freelancer') return null;
     const jobs = readJobs();
     const idx = jobs.findIndex(j => j.id === jobId);
     if (idx === -1) return null;
+    // Prevent the job owner from applying to their own job
+    if (jobs[idx].clientId === data.freelancerId) return null;
+    // One application per freelancer per job
     if (jobs[idx].applications.some(a => a.freelancerId === data.freelancerId)) return null;
     const app: JobApplication = { ...data, id: crypto.randomUUID(), jobId, status: 'pending', createdAt: new Date().toISOString() };
     jobs[idx].applications.push(app);
@@ -116,10 +126,12 @@ export const marketplace = {
     return app;
   },
 
-  acceptApplication(jobId: string, appId: string): Job | null {
+  acceptApplication(jobId: string, appId: string, callerId?: string): Job | null {
     const jobs = readJobs();
     const idx = jobs.findIndex(j => j.id === jobId);
     if (idx === -1) return null;
+    // Only the job owner (client) may accept applications
+    if (callerId && jobs[idx].clientId !== callerId) return null;
     jobs[idx].applications = jobs[idx].applications.map(a => ({
       ...a, status: a.id === appId ? 'accepted' : 'rejected',
     }));
@@ -128,10 +140,12 @@ export const marketplace = {
     return jobs[idx];
   },
 
-  rejectApplication(jobId: string, appId: string): void {
+  rejectApplication(jobId: string, appId: string, callerId?: string): void {
     const jobs = readJobs();
     const idx = jobs.findIndex(j => j.id === jobId);
     if (idx === -1) return;
+    // Only the job owner (client) may reject applications
+    if (callerId && jobs[idx].clientId !== callerId) return;
     jobs[idx].applications = jobs[idx].applications.map(a =>
       a.id === appId ? { ...a, status: 'rejected' } : a
     );
@@ -166,26 +180,36 @@ export const marketplace = {
     return readOffers().find(o => o.id === id) ?? null;
   },
 
-  sendOffer(data: Omit<ContractOffer, 'id' | 'createdAt' | 'status'>): ContractOffer {
+  sendOffer(data: Omit<ContractOffer, 'id' | 'createdAt' | 'status'>, callerRole?: string): ContractOffer | null {
+    // Only clients may send offers
+    if (callerRole && callerRole !== 'client') return null;
+    // Cannot send an offer to yourself
+    if (data.clientId === data.freelancerId) return null;
     const offers = readOffers();
     const offer: ContractOffer = { ...data, id: crypto.randomUUID(), status: 'pending', createdAt: new Date().toISOString() };
     writeOffers([offer, ...offers]);
     return offer;
   },
 
-  acceptOffer(offerId: string): ContractOffer | null {
+  acceptOffer(offerId: string, callerId?: string): ContractOffer | null {
     const offers = readOffers();
     const idx = offers.findIndex(o => o.id === offerId);
     if (idx === -1) return null;
+    // Only the intended freelancer may accept
+    if (callerId && offers[idx].freelancerId !== callerId) return null;
     offers[idx].status = 'accepted';
     writeOffers(offers);
     return offers[idx];
   },
 
-  declineOffer(offerId: string): void {
+  declineOffer(offerId: string, callerId?: string): void {
     const offers = readOffers();
     const idx = offers.findIndex(o => o.id === offerId);
-    if (idx !== -1) { offers[idx].status = 'declined'; writeOffers(offers); }
+    if (idx === -1) return;
+    // Only the intended freelancer may decline
+    if (callerId && offers[idx].freelancerId !== callerId) return;
+    offers[idx].status = 'declined';
+    writeOffers(offers);
   },
 
   markOfferContracted(offerId: string): void {

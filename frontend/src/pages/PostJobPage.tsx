@@ -72,7 +72,7 @@ export default function PostJobPage() {
     const googleAccount = user.linkedAccounts?.find((a: { type: string }) => a.type === 'google_oauth') as
       | { name: string | null } | undefined;
 
-    marketplace.postJob({
+    const posted = marketplace.postJob({
       clientId: user.id,
       clientName: profile?.displayName ?? googleAccount?.name ?? 'Client',
       clientAddress,
@@ -84,7 +84,9 @@ export default function PostJobPage() {
       budgetMax,
       token,
       deadline,
-    });
+    }, profile?.role);
+
+    if (!posted) { setSubmitting(false); return; } // role check failed (shouldn't happen via UI)
 
     navigate('/jobs', { replace: true });
   }

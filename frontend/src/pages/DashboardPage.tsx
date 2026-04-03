@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { usePrivy } from '@privy-io/react-auth';
 import { RpcProvider, CallData, uint256 } from 'starknet';
 import { useProfile } from '../hooks/useProfile';
@@ -66,9 +66,11 @@ const OFFER_STATUS_STYLE: Record<string, { label: string; text: string; bg: stri
 
 export default function DashboardPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { user } = usePrivy();
   const { profile } = useProfile(user?.id ?? null);
   const { connectStarknet, starknetAddress } = useWallet();
+  const roleError = (location.state as { roleError?: string } | null)?.roleError ?? null;
   const [contracts, setContracts] = useState<ContractSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [connecting, setConnecting] = useState(false);
@@ -136,7 +138,8 @@ export default function DashboardPage() {
   }
 
   function handleAcceptOffer(offer: ContractOffer) {
-    marketplace.acceptOffer(offer.id);
+    const result = marketplace.acceptOffer(offer.id, user?.id);
+    if (!result) return; // ownership check failed
     setOffers(prev => prev.map(o => o.id === offer.id ? { ...o, status: 'accepted' } : o));
     // Navigate to create on-chain contract with offer details pre-filled
     const params = new URLSearchParams({
@@ -149,7 +152,7 @@ export default function DashboardPage() {
   }
 
   function handleDeclineOffer(offerId: string) {
-    marketplace.declineOffer(offerId);
+    marketplace.declineOffer(offerId, user?.id);
     setOffers(prev => prev.map(o => o.id === offerId ? { ...o, status: 'declined' } : o));
   }
 
@@ -178,6 +181,16 @@ export default function DashboardPage() {
             </Link>
           )}
         </div>
+
+        {/* Role-access error */}
+        {roleError && (
+          <div className="mb-6 rounded-xl border border-red-500/20 bg-red-500/5 px-5 py-3.5 flex items-center gap-3">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor" className="text-red-400 shrink-0">
+              <path fillRule="evenodd" d="M13.477 14.89A6 6 0 015.11 6.524L13.477 14.89zm1.414-1.414A6 6 0 006.524 5.11L14.89 13.476zM18 10a8 8 0 11-16 0 8 8 0 0116 0z" clipRule="evenodd" />
+            </svg>
+            <p className="text-sm text-red-300">{roleError}</p>
+          </div>
+        )}
 
         {/* Connect wallet banner */}
         {!resolvedAddress && (

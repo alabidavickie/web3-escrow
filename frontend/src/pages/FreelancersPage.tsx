@@ -1,5 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { usePrivy } from '@privy-io/react-auth';
+import { useProfile } from '../hooks/useProfile';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 
@@ -40,6 +42,10 @@ const AVATAR_COLORS = [
 ];
 
 export default function FreelancersPage() {
+  const { user } = usePrivy();
+  const { profile } = useProfile(user?.id ?? null);
+  const isClient = profile?.role === 'client';
+
   const [freelancers, setFreelancers] = useState<FreelancerProfile[]>([]);
   const [search, setSearch] = useState('');
   const [copied, setCopied] = useState<string | null>(null);
@@ -72,9 +78,11 @@ export default function FreelancersPage() {
               {filtered.length} registered freelancer{filtered.length !== 1 ? 's' : ''} on EscrowHub
             </p>
           </div>
-          <Link to="/jobs/post" className="btn-primary py-2.5 text-sm whitespace-nowrap">
-            + Post a job
-          </Link>
+          {isClient && (
+            <Link to="/jobs/post" className="btn-primary py-2.5 text-sm whitespace-nowrap">
+              + Post a job
+            </Link>
+          )}
         </div>
 
         {/* Search */}
@@ -144,12 +152,14 @@ export default function FreelancersPage() {
                       )}
                     </button>
 
-                    <Link
-                      to={`/dashboard/create?freelancer=${f.starknetAddress}`}
-                      className="shrink-0 text-xs font-semibold text-brand-400 hover:text-brand-300 transition-colors px-2.5 py-1.5 rounded-lg border border-brand-500/20 hover:border-brand-500/40 hover:bg-brand-500/5"
-                    >
-                      Hire →
-                    </Link>
+                    {isClient && (
+                      <Link
+                        to={`/dashboard/create?freelancer=${f.starknetAddress}`}
+                        className="shrink-0 text-xs font-semibold text-brand-400 hover:text-brand-300 transition-colors px-2.5 py-1.5 rounded-lg border border-brand-500/20 hover:border-brand-500/40 hover:bg-brand-500/5"
+                      >
+                        Hire →
+                      </Link>
+                    )}
                   </div>
                 </div>
               );
