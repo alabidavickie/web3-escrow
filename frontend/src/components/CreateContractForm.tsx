@@ -54,7 +54,7 @@ const DURATION_OPTIONS = [
 
 export default function CreateContractForm() {
   const navigate = useNavigate();
-  const { authenticated } = usePrivy();
+  usePrivy();
   const { isConnected, isConnecting, connectStarknet, starknetAddress } = useWallet();
   const { createAndDeposit, loading, error, clearError } = useEscrow();
   const { toasts, addToast, removeToast } = useToast();
