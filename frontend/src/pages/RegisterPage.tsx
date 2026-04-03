@@ -37,11 +37,27 @@ export default function RegisterPage() {
     return Object.keys(errs).length === 0;
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!validate() || !user?.id) return;
-    saveProfile({ role, displayName: displayName.trim(), bio: bio.trim() || undefined, starknetAddress: resolvedAddress });
-    navigate('/dashboard', { replace: true });
+    
+    setConnecting(true); // Re-use connecting state for registration loading
+    try {
+      const success = await saveProfile({ 
+        role, 
+        displayName: displayName.trim(), 
+        bio: bio.trim() || undefined, 
+        starknetAddress: resolvedAddress 
+      });
+      
+      if (success) {
+        navigate('/dashboard', { replace: true });
+      } else {
+        alert('Failed to save profile to the marketplace. Please check your Supabase setup and try again.');
+      }
+    } finally {
+      setConnecting(false);
+    }
   }
 
   if (profile) return null;

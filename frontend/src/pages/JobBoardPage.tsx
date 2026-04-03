@@ -200,15 +200,34 @@ export default function JobBoardPage() {
                     <circle cx="11" cy="11" r="8" /><path strokeLinecap="round" d="M21 21l-4.35-4.35" />
                   </svg>
                 </div>
-                <p className="text-gray-400 font-medium">No jobs found</p>
-                <p className="text-sm text-gray-600 mt-1">
-                  {isClient ? 'Be the first to post a job.' : 'Check back soon or adjust your filters.'}
+                <p className="text-gray-200 font-semibold text-lg">No jobs available right now</p>
+                <p className="text-sm text-gray-500 mt-2 max-w-sm mx-auto">
+                  {isClient 
+                    ? 'You haven\'t posted any jobs yet. Start by creating your first project.' 
+                    : 'The job board is currently empty. Check back later for new opportunities on Starknet Sepolia.'
+                  }
                 </p>
-                {isClient && (
-                  <Link to="/jobs/post" className="mt-4 btn-primary py-2 text-sm inline-flex">
-                    Post a job
-                  </Link>
+                
+                {/* Developer Hint */}
+                {jobs.length === 0 && !loadingJobs && (
+                  <div className="mt-6 p-3 rounded-lg bg-yellow-500/5 border border-yellow-500/20 text-[11px] text-yellow-200/50 inline-block">
+                    <p>Tip: If you see this after posting, ensure Supabase tables & RLS policies are applied.</p>
+                  </div>
                 )}
+
+                <div className="mt-8 flex justify-center gap-3">
+                  {isClient && (
+                    <Link to="/jobs/post" className="btn-primary py-2.5 px-6 text-sm">
+                      + Post a Job
+                    </Link>
+                  )}
+                  <button 
+                    onClick={() => { setLoadingJobs(true); marketplace.getJobs().then(setJobs).finally(() => setLoadingJobs(false)); }}
+                    className="px-4 py-2 text-sm font-medium text-gray-400 hover:text-gray-200 transition-colors"
+                  >
+                    Refresh Board
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="space-y-3">

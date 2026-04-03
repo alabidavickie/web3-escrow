@@ -164,7 +164,10 @@ export const marketplace = {
     data: Omit<Job, 'id' | 'createdAt' | 'applications' | 'status'>,
     callerRole?: string,
   ): Promise<Job | null> {
-    if (callerRole && callerRole !== 'client') return null;
+    if (callerRole && callerRole !== 'client') {
+      console.warn('[Marketplace] Only clients can post jobs.');
+      return null;
+    }
     
     const payload = {
       ...data,
@@ -174,16 +177,20 @@ export const marketplace = {
     };
 
     try {
+      console.log('[Marketplace] Posting job to Supabase...');
       const { data: inserted, error } = await supabase
         .from(JOBS_TABLE)
         .insert(payload)
         .select()
         .single();
       
-      if (error) throw error;
+      if (error) {
+        console.error('[Marketplace] Supabase insert error:', error.message);
+        return null;
+      }
       return inserted;
     } catch (err) {
-      console.error('[Marketplace] Error posting job:', err);
+      console.error('[Marketplace] Unexpected error posting job:', err);
       return null;
     }
   },
@@ -193,14 +200,28 @@ export const marketplace = {
     data: Omit<JobApplication, 'id' | 'jobId' | 'status' | 'createdAt'>,
     callerRole?: string,
   ): Promise<JobApplication | null> {
-    if (callerRole && callerRole !== 'freelancer') return null;
+    if (callerRole && callerRole !== 'freelancer') {
+      console.warn('[Marketplace] Only freelancers can apply to jobs.');
+      return null;
+    }
     
     const job = await this.getJobById(jobId);
-    if (!job) return null;
-    if (job.clientId === data.freelancerId) return null;
+    if (!job) {
+      console.error('[Marketplace] Job not found for application:', jobId);
+      return null;
+    }
     
-    const apps = job.applications || [];
-    if (apps.some(a => a.freelancerId === data.freelancerId)) return null;
+    // Check if the freelancer is also the client
+    if (job.clientId === data.freelancerId) {
+      console.warn('[Marketplace] Clients cannot apply to their own jobs.');
+      return null;
+    }
+    
+    const apps = Array.isArray(job.applications) ? job.applications : [];
+    if (apps.some(a => a.freelancerId === data.freelancerId)) {
+      console.warn('[Marketplace] Freelancer has already applied to this job.');
+      return null;
+    }
 
     const newApp: JobApplication = {
       ...data,
@@ -211,15 +232,19 @@ export const marketplace = {
     };
 
     try {
+      console.log(`[Marketplace] Applying to job ${jobId}...`);
       const { error } = await supabase
         .from(JOBS_TABLE)
         .update({ applications: [...apps, newApp] })
         .eq('id', jobId);
       
-      if (error) throw error;
+      if (error) {
+        console.error('[Marketplace] Supabase update application error:', error.message);
+        return null;
+      }
       return newApp;
     } catch (err) {
-      console.error('[Marketplace] Error applying to job:', err);
+      console.error('[Marketplace] Unexpected error applying to job:', err);
       return null;
     }
   },

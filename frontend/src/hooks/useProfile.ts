@@ -74,20 +74,30 @@ export function useProfile(userId: string | null) {
   }, [userId]);
 
   const saveProfile = useCallback(
-    async (data: UserProfile) => {
-      if (!userId) return;
+    async (data: UserProfile): Promise<boolean> => {
+      if (!userId) return false;
       // Save to localStorage (immediate)
       localStorage.setItem(localKey(userId), JSON.stringify(data));
       setProfileState(data);
       window.dispatchEvent(new Event(`profile_updated_${userId}`));
+      
       // Sync to Supabase (shared)
       try {
+        console.log(`[useProfile] Syncing profile for ${userId} to Supabase...`);
         const { error } = await supabase
           .from(PROFILES_TABLE)
           .upsert({ ...data, userId });
-        if (error) throw error;
+        
+        if (error) {
+          console.error('[useProfile] Supabase sync error:', error.message);
+          return false;
+        }
+        
+        console.log(`[useProfile] Successfully synced profile for ${userId}`);
+        return true;
       } catch (e) {
-        console.error('Failed to sync profile to Supabase:', e);
+        console.error('[useProfile] Unexpected sync error:', e);
+        return false;
       }
     },
     [userId],
