@@ -116,18 +116,27 @@ export default function FreelancersPage() {
             </svg>
           </div>
         ) : filtered.length === 0 ? (
-          <div className="feature-card p-16 text-center">
+          <div className="feature-card p-12 text-center">
             <div className="w-12 h-12 rounded-2xl bg-brand-500/10 border border-brand-500/20 flex items-center justify-center mx-auto mb-4">
               <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth="1.5">
                 <path strokeLinecap="round" d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
                 <circle cx="9" cy="7" r="4" />
-                <path strokeLinecap="round" d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75" />
               </svg>
             </div>
-            <p className="text-gray-400 font-medium">No freelancers found</p>
-            <p className="text-sm text-gray-600 mt-1">
-              {search ? 'Try a different search.' : 'Freelancers who register on EscrowHub will appear here.'}
+            <p className="text-gray-200 font-semibold text-lg">No freelancers found</p>
+            <p className="text-sm text-gray-500 mt-2 max-w-sm mx-auto">
+              {search ? 'Try a different search query.' : 'Freelancers who register on EscrowHub will appear here in real-time.'}
             </p>
+            {!search && (
+              <div className="mt-8 flex justify-center">
+                <button 
+                  onClick={() => { setLoading(true); getAllFreelancers().then(setFreelancers).finally(() => setLoading(false)); }}
+                  className="btn-secondary py-2 px-6 text-sm font-medium"
+                >
+                  Refresh
+                </button>
+              </div>
+            )}
           </div>
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">

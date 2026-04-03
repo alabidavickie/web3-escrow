@@ -207,26 +207,21 @@ export default function JobBoardPage() {
                     : 'The job board is currently empty. Check back later for new opportunities on Starknet Sepolia.'
                   }
                 </p>
-                
-                {/* Developer Hint */}
-                {jobs.length === 0 && !loadingJobs && (
-                  <div className="mt-6 p-3 rounded-lg bg-yellow-500/5 border border-yellow-500/20 text-[11px] text-yellow-200/50 inline-block">
-                    <p>Tip: If you see this after posting, ensure Supabase tables & RLS policies are applied.</p>
-                  </div>
-                )}
 
-                <div className="mt-8 flex justify-center gap-3">
+                <div className="mt-8 flex justify-center">
                   {isClient && (
                     <Link to="/jobs/post" className="btn-primary py-2.5 px-6 text-sm">
                       + Post a Job
                     </Link>
                   )}
-                  <button 
-                    onClick={() => { setLoadingJobs(true); marketplace.getJobs().then(setJobs).finally(() => setLoadingJobs(false)); }}
-                    className="px-4 py-2 text-sm font-medium text-gray-400 hover:text-gray-200 transition-colors"
-                  >
-                    Refresh Board
-                  </button>
+                  {!isClient && (
+                    <button 
+                      onClick={() => { setLoadingJobs(true); marketplace.getJobs().then(setJobs).finally(() => setLoadingJobs(false)); }}
+                      className="btn-secondary py-2 px-6 text-sm font-medium"
+                    >
+                      Refresh
+                    </button>
+                  )}
                 </div>
               </div>
             ) : (

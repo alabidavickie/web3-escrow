@@ -62,10 +62,10 @@ export default function ProfilePage() {
     return Object.keys(errs).length === 0;
   }
 
-  function handleSave(e: React.FormEvent) {
+  async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!validate() || !profile) return;
-    saveProfile({
+    const ok = await saveProfile({
       ...profile,
       displayName: displayName.trim(),
       nickname: nickname.trim() || undefined,
@@ -75,8 +75,10 @@ export default function ProfilePage() {
       tgLink: tgLink.trim() || undefined,
       discordLink: discordLink.trim() || undefined,
     });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
+    if (ok !== false) {
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    }
   }
 
   const initial = displayName[0]?.toUpperCase() ?? '?';
