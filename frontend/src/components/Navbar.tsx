@@ -1,8 +1,17 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { usePrivy } from '@privy-io/react-auth';
 import { useProfile } from '../hooks/useProfile';
 import SignInButton from './SignInButton';
+
+const AVATAR_GRADIENTS = [
+  'from-pink-500 to-rose-600',
+  'from-violet-500 to-purple-600',
+  'from-blue-500 to-cyan-600',
+  'from-emerald-500 to-teal-600',
+  'from-amber-500 to-orange-600',
+  'from-indigo-500 to-blue-600',
+];
 
 const Logo = () => (
   <Link to="/" className="flex items-center gap-2.5 group">
@@ -18,12 +27,96 @@ const Logo = () => (
   </Link>
 );
 
+function UserMenu({ displayName, role }: { displayName: string; role?: string }) {
+  const [open, setOpen] = useState(false);
+  const { logout } = usePrivy();
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const initial = displayName[0]?.toUpperCase() ?? '?';
+  const gradient = AVATAR_GRADIENTS[initial.charCodeAt(0) % AVATAR_GRADIENTS.length];
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-2 pl-1 pr-3 py-1 rounded-xl border border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06] transition-colors"
+        aria-label="User menu"
+      >
+        <div className={`w-7 h-7 rounded-lg bg-gradient-to-br ${gradient} flex items-center justify-center text-white font-bold text-xs shrink-0`}>
+          {initial}
+        </div>
+        <span className="text-xs font-medium text-gray-300 max-w-[80px] truncate">{displayName}</span>
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" className={`text-gray-500 transition-transform ${open ? 'rotate-180' : ''}`}>
+          <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute right-0 mt-2 w-52 rounded-xl border border-white/[0.08] bg-[#111118] shadow-xl py-1 z-50 animate-fade-in">
+          <div className="px-4 py-2.5 border-b border-white/[0.06]">
+            <p className="text-xs font-semibold text-gray-300 truncate">{displayName}</p>
+            {role && <p className="text-xs text-gray-600 capitalize">{role}</p>}
+          </div>
+          <Link
+            to="/profile"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-400 hover:text-gray-100 hover:bg-white/[0.04] transition-colors"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="shrink-0">
+              <path strokeLinecap="round" d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
+              <circle cx="12" cy="7" r="4" />
+            </svg>
+            Profile
+          </Link>
+          <Link
+            to="/dashboard"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-3 px-4 py-2.5 text-sm text-gray-400 hover:text-gray-100 hover:bg-white/[0.04] transition-colors"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="shrink-0">
+              <rect x="3" y="3" width="7" height="7" rx="1" />
+              <rect x="14" y="3" width="7" height="7" rx="1" />
+              <rect x="3" y="14" width="7" height="7" rx="1" />
+              <rect x="14" y="14" width="7" height="7" rx="1" />
+            </svg>
+            Dashboard
+          </Link>
+          <div className="border-t border-white/[0.06] mt-1 pt-1">
+            <button
+              onClick={() => { setOpen(false); logout(); }}
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/5 transition-colors text-left"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="shrink-0">
+                <path strokeLinecap="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+              Sign out
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
   const { authenticated, user } = usePrivy();
   const { profile } = useProfile(user?.id ?? null);
   const location = useLocation();
   const isLanding = location.pathname === '/';
+
+  const googleAccount = user?.linkedAccounts?.find(
+    (a: { type: string }) => a.type === 'google_oauth',
+  ) as { name: string | null } | undefined;
+  const displayName = profile?.displayName ?? googleAccount?.name ?? 'Account';
 
   return (
     <header className="sticky top-0 z-50 bg-[#09090f]/80 backdrop-blur-xl border-b border-white/[0.06]">
@@ -41,11 +134,8 @@ export default function Navbar() {
               </>
             ) : (
               <>
-                <Link to="/jobs"         className="text-sm font-medium text-gray-400 hover:text-gray-100 transition-colors">Jobs</Link>
+                <Link to="/jobs"        className="text-sm font-medium text-gray-400 hover:text-gray-100 transition-colors">Jobs</Link>
                 <Link to="/freelancers" className="text-sm font-medium text-gray-400 hover:text-gray-100 transition-colors">Freelancers</Link>
-                {authenticated && (
-                  <Link to="/dashboard" className="text-sm font-medium text-gray-400 hover:text-gray-100 transition-colors">Dashboard</Link>
-                )}
                 {authenticated && profile?.role === 'client' && (
                   <Link to="/jobs/post" className="text-sm font-medium text-gray-400 hover:text-gray-100 transition-colors">Post a job</Link>
                 )}
@@ -55,12 +145,14 @@ export default function Navbar() {
 
           {/* Desktop actions */}
           <div className="hidden md:flex items-center gap-2">
-            <SignInButton variant="light" size="sm" />
             {!authenticated && (
-              <Link to="/login" className="btn-primary py-2 text-xs">Get started free</Link>
+              <>
+                <SignInButton variant="light" size="sm" />
+                <Link to="/login" className="btn-primary py-2 text-xs">Get started free</Link>
+              </>
             )}
-            {authenticated && profile && (
-              <Link to="/dashboard" className="btn-primary py-2 text-xs">Dashboard</Link>
+            {authenticated && (
+              <UserMenu displayName={displayName} role={profile?.role} />
             )}
           </div>
 
@@ -86,6 +178,7 @@ export default function Navbar() {
         {menuOpen && (
           <div className="md:hidden pb-4 pt-2 border-t border-white/[0.06] space-y-1 animate-fade-in">
             <Link to="/jobs" onClick={() => setMenuOpen(false)} className="block px-3 py-2 rounded-lg text-sm font-medium text-gray-400 hover:bg-white/5 hover:text-gray-100 transition-colors">Job board</Link>
+            <Link to="/freelancers" onClick={() => setMenuOpen(false)} className="block px-3 py-2 rounded-lg text-sm font-medium text-gray-400 hover:bg-white/5 hover:text-gray-100 transition-colors">Freelancers</Link>
             {isLanding && (
               <>
                 <a href="#features"     onClick={() => setMenuOpen(false)} className="block px-3 py-2 rounded-lg text-sm font-medium text-gray-400 hover:bg-white/5 hover:text-gray-100 transition-colors">Features</a>
@@ -93,7 +186,10 @@ export default function Navbar() {
               </>
             )}
             {authenticated && (
-              <Link to="/dashboard" onClick={() => setMenuOpen(false)} className="block px-3 py-2 rounded-lg text-sm font-medium text-gray-400 hover:bg-white/5 hover:text-gray-100 transition-colors">Dashboard</Link>
+              <>
+                <Link to="/dashboard" onClick={() => setMenuOpen(false)} className="block px-3 py-2 rounded-lg text-sm font-medium text-gray-400 hover:bg-white/5 hover:text-gray-100 transition-colors">Dashboard</Link>
+                <Link to="/profile"   onClick={() => setMenuOpen(false)} className="block px-3 py-2 rounded-lg text-sm font-medium text-gray-400 hover:bg-white/5 hover:text-gray-100 transition-colors">Profile</Link>
+              </>
             )}
             {authenticated && profile?.role === 'client' && (
               <>
@@ -102,9 +198,11 @@ export default function Navbar() {
               </>
             )}
             <div className="pt-3 flex flex-col gap-2 px-3">
-              <SignInButton variant="light" size="sm" className="w-full" />
               {!authenticated && (
-                <Link to="/login" className="btn-primary w-full text-center" onClick={() => setMenuOpen(false)}>Get started free</Link>
+                <>
+                  <SignInButton variant="light" size="sm" className="w-full" />
+                  <Link to="/login" className="btn-primary w-full text-center" onClick={() => setMenuOpen(false)}>Get started free</Link>
+                </>
               )}
             </div>
           </div>

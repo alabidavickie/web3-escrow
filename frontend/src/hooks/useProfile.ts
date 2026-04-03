@@ -5,8 +5,12 @@ export type UserRole = 'freelancer' | 'client';
 export interface UserProfile {
   role: UserRole;
   displayName: string;
+  nickname?: string;
   bio?: string;
   starknetAddress: string;
+  xLink?: string;
+  tgLink?: string;
+  discordLink?: string;
 }
 
 const storageKey = (userId: string) => `escrowhub_profile_${userId}`;
@@ -16,13 +20,8 @@ export function useProfile(userId: string | null) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Initial load
     const loadProfile = () => {
-      if (!userId) {
-        setProfileState(null);
-        setLoading(false);
-        return;
-      }
+      if (!userId) { setProfileState(null); setLoading(false); return; }
       try {
         const raw = localStorage.getItem(storageKey(userId));
         setProfileState(raw ? JSON.parse(raw) : null);
@@ -33,8 +32,6 @@ export function useProfile(userId: string | null) {
     };
 
     loadProfile();
-
-    // Event listener for cross-hook synchronization
     const handleUpdate = () => loadProfile();
     window.addEventListener(`profile_updated_${userId}`, handleUpdate);
     return () => window.removeEventListener(`profile_updated_${userId}`, handleUpdate);

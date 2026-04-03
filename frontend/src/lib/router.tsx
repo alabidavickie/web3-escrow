@@ -3,6 +3,7 @@ import LandingPage from '../pages/LandingPage';
 import LoginPage from '../pages/LoginPage';
 import RegisterPage from '../pages/RegisterPage';
 import DashboardPage from '../pages/DashboardPage';
+import ProfilePage from '../pages/ProfilePage';
 import CreateContractPage from '../pages/CreateContractPage';
 import ContractDetailPage from '../pages/ContractDetailPage';
 import JobBoardPage from '../pages/JobBoardPage';
@@ -22,6 +23,7 @@ export const router = createBrowserRouter([
     children: [
       { path: '/register',               element: <RegisterPage /> },
       { path: '/dashboard',              element: <DashboardPage /> },
+      { path: '/profile',                element: <ProfilePage /> },
       { path: '/dashboard/create',       element: <CreateContractPage /> },
       { path: '/dashboard/contract/:id', element: <ContractDetailPage /> },
       { path: '/jobs/post',              element: <PostJobPage /> },

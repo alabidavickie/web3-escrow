@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { usePrivy } from '@privy-io/react-auth';
 import { RpcProvider, CallData, uint256 } from 'starknet';
 import { useProfile } from '../hooks/useProfile';
 import { useWallet } from '../hooks/useWallet';
+import { marketplace, ContractOffer } from '../lib/marketplace';
 import Navbar from '../components/Navbar';
 import Footer from '../components/Footer';
 import { ESCROW_ADDRESS, SUPPORTED_TOKENS } from '../lib/contracts';
@@ -54,13 +55,25 @@ const STATUS_LABEL: Record<number, { label: string; dot: string; text: string }>
   2: { label: 'Disputed',  dot: 'bg-red-400',   text: 'text-red-400'   },
 };
 
+type TabId = 'contracts' | 'offers';
+
+const OFFER_STATUS_STYLE: Record<string, { label: string; text: string; bg: string }> = {
+  pending:    { label: 'Pending',    text: 'text-amber-400',  bg: 'bg-amber-500/10 border-amber-500/20' },
+  accepted:   { label: 'Accepted',  text: 'text-green-400',  bg: 'bg-green-500/10 border-green-500/20' },
+  declined:   { label: 'Declined',  text: 'text-red-400',    bg: 'bg-red-500/10 border-red-500/20'   },
+  contracted: { label: 'Contracted',text: 'text-brand-400',  bg: 'bg-brand-500/10 border-brand-500/20' },
+};
+
 export default function DashboardPage() {
+  const navigate = useNavigate();
   const { user } = usePrivy();
   const { profile } = useProfile(user?.id ?? null);
   const { connectStarknet, starknetAddress } = useWallet();
   const [contracts, setContracts] = useState<ContractSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [connecting, setConnecting] = useState(false);
+  const [tab, setTab] = useState<TabId>('contracts');
+  const [offers, setOffers] = useState<ContractOffer[]>([]);
 
   const resolvedAddress = starknetAddress ?? profile?.starknetAddress ?? null;
 
@@ -68,6 +81,15 @@ export default function DashboardPage() {
     if (!resolvedAddress) return;
     loadContracts(resolvedAddress);
   }, [resolvedAddress]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    if (profile?.role === 'freelancer') {
+      setOffers(marketplace.getOffersForFreelancer(user.id));
+    } else if (profile?.role === 'client') {
+      setOffers(marketplace.getOffersByClient(user.id));
+    }
+  }, [user?.id, profile?.role]);
 
   async function loadContracts(addr: string) {
     setLoading(true);
@@ -111,6 +133,24 @@ export default function DashboardPage() {
     setConnecting(true);
     await connectStarknet();
     setConnecting(false);
+  }
+
+  function handleAcceptOffer(offer: ContractOffer) {
+    marketplace.acceptOffer(offer.id);
+    setOffers(prev => prev.map(o => o.id === offer.id ? { ...o, status: 'accepted' } : o));
+    // Navigate to create on-chain contract with offer details pre-filled
+    const params = new URLSearchParams({
+      freelancer: offer.freelancerAddress,
+      freelancerName: offer.freelancerName,
+      offerTitle: offer.title,
+      offerId: offer.id,
+    });
+    navigate(`/dashboard/create?${params.toString()}`);
+  }
+
+  function handleDeclineOffer(offerId: string) {
+    marketplace.declineOffer(offerId);
+    setOffers(prev => prev.map(o => o.id === offerId ? { ...o, status: 'declined' } : o));
   }
 
   const googleAccount = user?.linkedAccounts?.find((a: { type: string }) => a.type === 'google_oauth') as
@@ -174,85 +214,202 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Contract list */}
-        <div className="rounded-2xl border border-white/[0.07] bg-surface-200 overflow-hidden shadow-card">
-          <div className="px-6 py-4 border-b border-white/[0.06] flex items-center justify-between">
-            <h2 className="font-semibold text-gray-200 text-sm">Your contracts</h2>
-            {resolvedAddress && (
-              <span className="text-xs text-gray-600 font-mono">{shortAddr(resolvedAddress)}</span>
-            )}
-          </div>
+        {/* Tabs */}
+        <div className="flex gap-1 mb-4 p-1 rounded-xl bg-white/[0.03] border border-white/[0.06] w-fit">
+          {([
+            { id: 'contracts' as TabId, label: 'Contracts', count: contracts.length },
+            { id: 'offers' as TabId, label: profile?.role === 'client' ? 'Sent Offers' : 'Offer Inbox', count: offers.filter(o => o.status === 'pending').length },
+          ]).map(t => (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all flex items-center gap-2 ${
+                tab === t.id
+                  ? 'bg-white/[0.07] text-gray-100 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-300'
+              }`}
+            >
+              {t.label}
+              {t.count > 0 && (
+                <span className={`w-4 h-4 rounded-full text-[10px] flex items-center justify-center font-bold ${
+                  tab === t.id ? 'bg-brand-500/30 text-brand-300' : 'bg-white/[0.06] text-gray-500'
+                }`}>
+                  {t.count}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
 
-          {!resolvedAddress ? (
-            <div className="px-6 py-16 text-center text-gray-600 text-sm">
-              Connect your wallet to view contracts
-            </div>
-          ) : loading ? (
-            <div className="px-6 py-16 flex justify-center">
-              <svg className="animate-spin h-6 w-6 text-brand-500" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-            </div>
-          ) : contracts.length === 0 ? (
-            <div className="px-6 py-16 text-center">
-              <p className="text-gray-500 text-sm">No contracts found for this address.</p>
-              {profile?.role === 'client' && (
-                <Link to="/dashboard/create" className="mt-4 btn-primary py-2 text-sm inline-flex">
-                  Create your first contract
-                </Link>
+        {/* Contracts tab */}
+        {tab === 'contracts' && (
+          <div className="rounded-2xl border border-white/[0.07] bg-surface-200 overflow-hidden shadow-card">
+            <div className="px-6 py-4 border-b border-white/[0.06] flex items-center justify-between">
+              <h2 className="font-semibold text-gray-200 text-sm">Your contracts</h2>
+              {resolvedAddress && (
+                <span className="text-xs text-gray-600 font-mono">{shortAddr(resolvedAddress)}</span>
               )}
             </div>
-          ) : (
-            <div className="divide-y divide-white/[0.04]">
-              {contracts.map(c => {
-                const sym = tokenSymbol(c.token);
-                const dec = tokenDecimals(c.token);
-                const st = STATUS_LABEL[c.status] ?? { label: 'Unknown', dot: 'bg-gray-400', text: 'text-gray-400' };
-                const isClient = c.client.toLowerCase() === resolvedAddress.toLowerCase();
 
-                return (
-                  <Link
-                    key={String(c.id)}
-                    to={`/dashboard/contract/${String(c.id)}`}
-                    className="px-6 py-4 flex flex-col sm:flex-row sm:items-center gap-3 hover:bg-white/[0.03] transition-colors cursor-pointer"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm font-semibold text-gray-200">
-                          Contract #{String(c.id)}
-                        </span>
-                        <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${st.text}`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
-                          {st.label}
-                        </span>
-                        <span className="text-xs text-gray-600 px-2 py-0.5 rounded-full bg-white/5 border border-white/[0.06]">
-                          {isClient ? 'Client' : 'Freelancer'}
-                        </span>
-                      </div>
-                      <div className="mt-1 text-xs text-gray-600 flex flex-wrap gap-x-4 gap-y-0.5">
-                        <span>
-                          {isClient ? 'Freelancer' : 'Client'}:{' '}
-                          <span className="font-mono">{shortAddr(isClient ? c.freelancer : c.client)}</span>
-                        </span>
-                        <span>{c.milestoneCount} milestone{c.milestoneCount !== 1 ? 's' : ''}</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      <p className="text-sm font-bold text-gray-200">
-                        {formatAmount(c.totalAmount, dec)}{' '}
-                        <span className="text-brand-400 font-semibold">{sym}</span>
-                      </p>
-                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-gray-700">
-                        <path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                      </svg>
-                    </div>
+            {!resolvedAddress ? (
+              <div className="px-6 py-16 text-center text-gray-600 text-sm">
+                Connect your wallet to view contracts
+              </div>
+            ) : loading ? (
+              <div className="px-6 py-16 flex justify-center">
+                <svg className="animate-spin h-6 w-6 text-brand-500" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              </div>
+            ) : contracts.length === 0 ? (
+              <div className="px-6 py-16 text-center">
+                <p className="text-gray-500 text-sm">No contracts found for this address.</p>
+                {profile?.role === 'client' && (
+                  <Link to="/dashboard/create" className="mt-4 btn-primary py-2 text-sm inline-flex">
+                    Create your first contract
                   </Link>
-                );
-              })}
+                )}
+              </div>
+            ) : (
+              <div className="divide-y divide-white/[0.04]">
+                {contracts.map(c => {
+                  const sym = tokenSymbol(c.token);
+                  const dec = tokenDecimals(c.token);
+                  const st = STATUS_LABEL[c.status] ?? { label: 'Unknown', dot: 'bg-gray-400', text: 'text-gray-400' };
+                  const isClient = c.client.toLowerCase() === resolvedAddress.toLowerCase();
+
+                  return (
+                    <Link
+                      key={String(c.id)}
+                      to={`/dashboard/contract/${String(c.id)}`}
+                      className="px-6 py-4 flex flex-col sm:flex-row sm:items-center gap-3 hover:bg-white/[0.03] transition-colors cursor-pointer"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-semibold text-gray-200">Contract #{String(c.id)}</span>
+                          <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${st.text}`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
+                            {st.label}
+                          </span>
+                          <span className="text-xs text-gray-600 px-2 py-0.5 rounded-full bg-white/5 border border-white/[0.06]">
+                            {isClient ? 'Client' : 'Freelancer'}
+                          </span>
+                        </div>
+                        <div className="mt-1 text-xs text-gray-600 flex flex-wrap gap-x-4 gap-y-0.5">
+                          <span>
+                            {isClient ? 'Freelancer' : 'Client'}:{' '}
+                            <span className="font-mono">{shortAddr(isClient ? c.freelancer : c.client)}</span>
+                          </span>
+                          <span>{c.milestoneCount} milestone{c.milestoneCount !== 1 ? 's' : ''}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        <p className="text-sm font-bold text-gray-200">
+                          {formatAmount(c.totalAmount, dec)}{' '}
+                          <span className="text-brand-400 font-semibold">{sym}</span>
+                        </p>
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" className="text-gray-700">
+                          <path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Offers tab */}
+        {tab === 'offers' && (
+          <div className="rounded-2xl border border-white/[0.07] bg-surface-200 overflow-hidden shadow-card">
+            <div className="px-6 py-4 border-b border-white/[0.06]">
+              <h2 className="font-semibold text-gray-200 text-sm">
+                {profile?.role === 'client' ? 'Contract offers you sent' : 'Contract offers received'}
+              </h2>
+              {profile?.role === 'freelancer' && (
+                <p className="text-xs text-gray-600 mt-0.5">Accept an offer to create the on-chain escrow contract.</p>
+              )}
             </div>
-          )}
-        </div>
+
+            {offers.length === 0 ? (
+              <div className="px-6 py-16 text-center">
+                <div className="w-12 h-12 rounded-2xl bg-brand-500/10 border border-brand-500/20 flex items-center justify-center mx-auto mb-4">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth="1.5">
+                    <path strokeLinecap="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
+                </div>
+                <p className="text-gray-500 text-sm">
+                  {profile?.role === 'client'
+                    ? 'No offers sent yet. Browse freelancers and send a contract offer.'
+                    : 'No contract offers yet. Keep your profile updated to attract clients.'}
+                </p>
+                {profile?.role === 'client' && (
+                  <Link to="/freelancers" className="mt-4 btn-primary py-2 text-sm inline-flex">Browse freelancers</Link>
+                )}
+              </div>
+            ) : (
+              <div className="divide-y divide-white/[0.04]">
+                {offers.map(offer => {
+                  const style = OFFER_STATUS_STYLE[offer.status] ?? OFFER_STATUS_STYLE.pending;
+                  return (
+                    <div key={offer.id} className="px-6 py-5 flex flex-col sm:flex-row sm:items-start gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap mb-1">
+                          <p className="text-sm font-semibold text-gray-200 truncate">{offer.title}</p>
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${style.text} ${style.bg}`}>
+                            {style.label}
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-500 line-clamp-2 mb-2">{offer.description}</p>
+                        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600">
+                          <span>
+                            {profile?.role === 'client' ? 'To: ' : 'From: '}
+                            <span className="font-semibold text-gray-400">
+                              {profile?.role === 'client' ? offer.freelancerName : offer.clientName}
+                            </span>
+                          </span>
+                          <span>
+                            {offer.milestones.length} milestone{offer.milestones.length !== 1 ? 's' : ''}
+                          </span>
+                          <span className="font-semibold text-gray-300">
+                            {offer.totalAmount} {offer.token}
+                          </span>
+                          <span>{offer.duration}</span>
+                        </div>
+                      </div>
+                      {profile?.role === 'freelancer' && offer.status === 'pending' && (
+                        <div className="flex gap-2 shrink-0">
+                          <button
+                            onClick={() => handleDeclineOffer(offer.id)}
+                            className="btn-ghost px-3 py-1.5 text-xs text-red-400 border-red-500/20 hover:border-red-500/40"
+                          >
+                            Decline
+                          </button>
+                          <button
+                            onClick={() => handleAcceptOffer(offer)}
+                            className="btn-primary px-3 py-1.5 text-xs"
+                          >
+                            Accept &amp; create contract →
+                          </button>
+                        </div>
+                      )}
+                      {profile?.role === 'freelancer' && offer.status === 'accepted' && (
+                        <Link
+                          to={`/dashboard/create?freelancer=${offer.freelancerAddress}&offerTitle=${encodeURIComponent(offer.title)}&offerId=${offer.id}`}
+                          className="btn-primary px-3 py-1.5 text-xs shrink-0"
+                        >
+                          Create contract →
+                        </Link>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
       </main>
       <Footer />
     </div>

@@ -21,6 +21,8 @@ export default function PostJobPage() {
 
   const [title, setTitle]           = useState('');
   const [description, setDescription] = useState('');
+  const [category, setCategory]     = useState('');
+  const [categoryOther, setCategoryOther] = useState('');
   const [skills, setSkills]         = useState<string[]>([]);
   const [skillInput, setSkillInput] = useState('');
   const [budgetMin, setBudgetMin]   = useState('');
@@ -29,6 +31,8 @@ export default function PostJobPage() {
   const [deadline, setDeadline]     = useState('');
   const [errors, setErrors]         = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+
+  const resolvedCategory = category === 'Other' ? categoryOther.trim() : category;
 
   const clientAddress = starknetAddress ?? profile?.starknetAddress ?? '';
 
@@ -74,6 +78,7 @@ export default function PostJobPage() {
       clientAddress,
       title: title.trim(),
       description: description.trim(),
+      category: resolvedCategory || undefined,
       skills,
       budgetMin,
       budgetMax,
@@ -142,6 +147,33 @@ export default function PostJobPage() {
                 : <span />}
               <span className="text-xs text-gray-600">{description.length} chars</span>
             </div>
+          </div>
+
+          {/* Category */}
+          <div>
+            <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+              Category
+            </label>
+            <select
+              value={category}
+              onChange={e => { setCategory(e.target.value); setCategoryOther(''); }}
+              className="input-dark"
+            >
+              <option value="">Select a category…</option>
+              {['Smart Contracts', 'DeFi', 'NFTs', 'Frontend', 'Backend', 'Full-Stack', 'UI/UX Design', 'Security Audit', 'DevOps', 'API Integration', 'Other'].map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+            {category === 'Other' && (
+              <input
+                type="text"
+                value={categoryOther}
+                onChange={e => setCategoryOther(e.target.value)}
+                placeholder="Describe the category…"
+                maxLength={60}
+                className="input-dark mt-2"
+              />
+            )}
           </div>
 
           {/* Skills */}
