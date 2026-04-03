@@ -1,9 +1,10 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import { usePrivy } from '@privy-io/react-auth';
 import { useEscrow } from '../hooks/useEscrow';
 import { useWallet } from '../hooks/useWallet';
 import { useToast, ToastContainer } from './Toast';
 import { SUPPORTED_TOKENS, type SupportedToken } from '../lib/contracts';
-import SignInButton from './SignInButton';
 
 function parseTokenAmount(s: string, decimals: number): bigint {
   const trimmed = s.trim();
@@ -35,21 +36,40 @@ interface MilestoneField {
 const EMPTY_MILESTONE: MilestoneField = { description: '', amount: '' };
 
 export default function CreateContractForm() {
-  const { isConnected } = useWallet();
+  const { authenticated } = usePrivy();
+  const { isConnected, connectStarknet, starknetAddress } = useWallet();
   const { createAndDeposit, loading, error, clearError } = useEscrow();
   const { toasts, addToast, removeToast } = useToast();
+  const [searchParams] = useSearchParams();
 
-  const [freelancer, setFreelancer]     = useState('');
+  // Pre-fill from job acceptance
+  const prefillFreelancer = searchParams.get('freelancer') ?? '';
+  const prefillJobTitle   = searchParams.get('jobTitle') ?? '';
+
+  const [freelancer, setFreelancer]     = useState(prefillFreelancer);
   const [selectedToken, setSelectedToken] = useState<SupportedToken>(SUPPORTED_TOKENS[0]);
-  const [milestones, setMilestones]     = useState<MilestoneField[]>([
-    { ...EMPTY_MILESTONE }, { ...EMPTY_MILESTONE },
-  ]);
+  const [milestones, setMilestones]     = useState<MilestoneField[]>(() =>
+    prefillJobTitle
+      ? [{ description: prefillJobTitle.slice(0, 31), amount: '' }]
+      : [{ ...EMPTY_MILESTONE }, { ...EMPTY_MILESTONE }]
+  );
   const [fieldErrors, setFieldErrors]   = useState<Record<string, string>>({});
+  const [connecting, setConnecting]     = useState(false);
+
+  useEffect(() => {
+    if (prefillFreelancer) setFreelancer(prefillFreelancer);
+  }, [prefillFreelancer]);
 
   const addMilestone    = () => setMilestones(prev => [...prev, { ...EMPTY_MILESTONE }]);
   const removeMilestone = (i: number) => setMilestones(prev => prev.filter((_, idx) => idx !== i));
   const updateMilestone = (i: number, key: keyof MilestoneField, val: string) =>
     setMilestones(prev => prev.map((m, idx) => (idx === i ? { ...m, [key]: val } : m)));
+
+  async function handleConnectWallet() {
+    setConnecting(true);
+    await connectStarknet();
+    setConnecting(false);
+  }
 
   function validate(): boolean {
     const errs: Record<string, string> = {};
@@ -57,16 +77,10 @@ export default function CreateContractForm() {
       errs.freelancer = 'Enter a valid hex address (0x…)';
     }
     milestones.forEach((m, i) => {
-      if (!m.description.trim()) {
-        errs[`desc_${i}`] = 'Description required';
-      } else if (!/^[\x00-\x7F]*$/.test(m.description)) {
-        errs[`desc_${i}`] = 'ASCII only (no emoji or accents)';
-      } else if (m.description.length > 31) {
-        errs[`desc_${i}`] = 'Max 31 characters';
-      }
-      if (parseTokenAmount(m.amount, selectedToken.decimals) === 0n) {
-        errs[`amt_${i}`] = 'Amount must be > 0';
-      }
+      if (!m.description.trim()) errs[`desc_${i}`] = 'Description required';
+      else if (!/^[\x00-\x7F]*$/.test(m.description)) errs[`desc_${i}`] = 'ASCII only (no emoji)';
+      else if (m.description.length > 31) errs[`desc_${i}`] = 'Max 31 characters';
+      if (parseTokenAmount(m.amount, selectedToken.decimals) === 0n) errs[`amt_${i}`] = 'Amount must be > 0';
     });
     setFieldErrors(errs);
     return Object.keys(errs).length === 0;
@@ -87,9 +101,7 @@ export default function CreateContractForm() {
     });
 
     if (result) {
-      const total = milestones.reduce(
-        (s, m) => s + parseTokenAmount(m.amount, selectedToken.decimals), 0n
-      );
+      const total = milestones.reduce((s, m) => s + parseTokenAmount(m.amount, selectedToken.decimals), 0n);
       addToast(
         'success',
         `Contract #${result.contractId} created!`,
@@ -107,21 +119,68 @@ export default function CreateContractForm() {
   }, 0n);
   const totalDisplay = formatTokenAmount(totalRaw, selectedToken.decimals);
 
-  if (!isConnected) {
+  // ── Not authenticated at all ──────────────────────────────────────────────
+  if (!authenticated) {
     return (
       <section id="create" className="py-20 bg-[#09090f]">
         <div className="max-w-xl mx-auto px-4 text-center">
           <div className="section-label">Create contract</div>
-          <h2 className="text-3xl font-extrabold text-gray-50 mt-2">Ready to get started?</h2>
-          <p className="mt-3 text-gray-400">Connect your wallet to create an escrow contract.</p>
-          <div className="mt-8 flex justify-center">
-            <SignInButton variant="dark" size="lg" />
-          </div>
+          <h2 className="text-3xl font-extrabold text-gray-50 mt-2">Sign in first</h2>
+          <p className="mt-3 text-gray-400 text-sm">Sign in with Google to create an escrow contract.</p>
         </div>
       </section>
     );
   }
 
+  // ── Authenticated but no Starknet wallet ──────────────────────────────────
+  if (!isConnected) {
+    return (
+      <section id="create" className="py-20 bg-[#09090f]">
+        <div className="max-w-md mx-auto px-4 text-center">
+          <div className="w-14 h-14 rounded-2xl bg-brand-500/10 border border-brand-500/20 flex items-center justify-center mx-auto mb-5">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#818cf8" strokeWidth="1.5">
+              <rect x="2" y="7" width="20" height="14" rx="2" />
+              <path d="M16 14a1 1 0 100-2 1 1 0 000 2z" fill="#818cf8" stroke="none" />
+              <path strokeLinecap="round" d="M2 11h20" />
+              <path strokeLinecap="round" d="M6 7V5a6 6 0 0112 0v2" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-extrabold text-gray-50 mb-2">Connect your Starknet wallet</h2>
+          <p className="text-gray-500 text-sm mb-2">
+            You're signed in with Google. Now connect Argent X or Braavos to sign and fund the escrow contract.
+          </p>
+          {starknetAddress ? (
+            <p className="text-xs text-gray-600 mb-6 font-mono">{starknetAddress}</p>
+          ) : (
+            <p className="text-xs text-amber-500/70 mb-6">No wallet detected yet</p>
+          )}
+          <button
+            onClick={handleConnectWallet}
+            disabled={connecting}
+            className="btn-primary px-8 py-3.5 text-base mx-auto"
+          >
+            {connecting ? (
+              <span className="flex items-center gap-2">
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+                Connecting…
+              </span>
+            ) : 'Connect Argent X or Braavos'}
+          </button>
+          <p className="mt-4 text-xs text-gray-600">
+            Don't have a wallet?{' '}
+            <a href="https://www.argent.xyz/argent-x/" target="_blank" rel="noopener noreferrer" className="text-brand-400 hover:underline">
+              Get Argent X
+            </a>
+          </p>
+        </div>
+      </section>
+    );
+  }
+
+  // ── Full form ─────────────────────────────────────────────────────────────
   return (
     <>
       <ToastContainer toasts={toasts} onClose={removeToast} />
@@ -132,18 +191,31 @@ export default function CreateContractForm() {
             <div className="section-label">New escrow</div>
             <h2 className="text-3xl font-extrabold text-gray-50 mt-2">Create a contract</h2>
             <p className="mt-3 text-gray-500 text-sm">
-              Funds are locked in the smart contract until you approve each milestone.
+              Funds lock in the smart contract until you approve each milestone.
             </p>
+            {prefillFreelancer && (
+              <div className="mt-4 inline-flex items-center gap-2 text-xs text-green-300 bg-green-500/10 border border-green-500/20 px-3 py-1.5 rounded-full">
+                <svg width="12" height="12" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" /></svg>
+                Pre-filled from job: {prefillJobTitle || 'accepted proposal'}
+              </div>
+            )}
           </div>
 
           <form onSubmit={handleSubmit} className="feature-card p-8 space-y-8" noValidate>
 
-            {/* Global error */}
             {error && (
               <div className="rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-400">
                 {error}
               </div>
             )}
+
+            {/* Connected wallet */}
+            <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl bg-green-500/5 border border-green-500/15">
+              <svg width="14" height="14" viewBox="0 0 20 20" fill="currentColor" className="text-green-400 shrink-0">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+              </svg>
+              <span className="text-xs text-green-300">Wallet connected: <span className="font-mono">{shortAddr(starknetAddress ?? '')}</span></span>
+            </div>
 
             {/* Freelancer address */}
             <div>
@@ -161,11 +233,9 @@ export default function CreateContractForm() {
               {fieldErrors.freelancer && <p className="mt-1.5 text-xs text-red-400">{fieldErrors.freelancer}</p>}
             </div>
 
-            {/* Payment token */}
+            {/* Token */}
             <div>
-              <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
-                Payment token
-              </label>
+              <label className="block text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Payment token</label>
               <div className="flex gap-2">
                 {SUPPORTED_TOKENS.map(token => (
                   <button
@@ -183,27 +253,16 @@ export default function CreateContractForm() {
                       {token.symbol[0]}
                     </span>
                     {token.symbol}
-                    <span className={`text-xs ${selectedToken.address === token.address ? 'text-brand-200' : 'text-gray-600'}`}>
-                      {token.decimals === 6 ? '6 dec' : '18 dec'}
-                    </span>
                   </button>
                 ))}
               </div>
-              {selectedToken.symbol === 'USDC' && (
-                <p className="mt-2 text-xs text-amber-400/80 bg-amber-500/5 border border-amber-500/15 rounded-lg px-3 py-2">
-                  Testnet USDC — get some from the{' '}
-                  <a href="https://starkgate.starknet.io" target="_blank" rel="noopener noreferrer" className="underline font-medium text-amber-400">
-                    StarkGate faucet
-                  </a>
-                </p>
-              )}
             </div>
 
             {/* Milestones */}
             <div>
               <div className="flex items-center justify-between mb-3">
                 <label className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Milestones</label>
-                <span className="text-xs text-gray-600">{milestones.length} milestone{milestones.length !== 1 ? 's' : ''}</span>
+                <span className="text-xs text-gray-600">{milestones.length}</span>
               </div>
 
               <div className="space-y-2.5">
@@ -214,13 +273,12 @@ export default function CreateContractForm() {
                         type="text"
                         value={m.description}
                         onChange={e => { updateMilestone(i, 'description', e.target.value); setFieldErrors(p => ({ ...p, [`desc_${i}`]: '' })); }}
-                        placeholder={`Milestone ${i + 1} (e.g. Design)`}
+                        placeholder={`Milestone ${i + 1}`}
                         maxLength={31}
                         className={`input-dark ${fieldErrors[`desc_${i}`] ? 'input-dark-error' : ''}`}
                       />
                       {fieldErrors[`desc_${i}`] && <p className="mt-1 text-xs text-red-400">{fieldErrors[`desc_${i}`]}</p>}
                     </div>
-
                     <div>
                       <div className="relative">
                         <input
@@ -238,17 +296,13 @@ export default function CreateContractForm() {
                       </div>
                       {fieldErrors[`amt_${i}`] && <p className="mt-1 text-xs text-red-400">{fieldErrors[`amt_${i}`]}</p>}
                     </div>
-
                     <button
                       type="button"
                       onClick={() => removeMilestone(i)}
                       disabled={milestones.length <= 1}
-                      className="mt-0.5 w-9 h-9 flex items-center justify-center rounded-xl
-                        text-gray-600 hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20
-                        disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
-                      aria-label="Remove milestone"
+                      className="mt-0.5 w-9 h-9 flex items-center justify-center rounded-xl text-gray-600 hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 disabled:opacity-20 disabled:cursor-not-allowed transition-colors"
                     >
-                      <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor">
+                      <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
                         <path d="M6 2a1 1 0 00-1 1v.5H3a.5.5 0 000 1h.5V13a1 1 0 001 1h7a1 1 0 001-1V4.5H13a.5.5 0 000-1h-2V3a1 1 0 00-1-1H6zm1 1h2v.5H7V3zm-2 2h6V13H5V5z" />
                       </svg>
                     </button>
@@ -256,19 +310,15 @@ export default function CreateContractForm() {
                 ))}
               </div>
 
-              <button
-                type="button"
-                onClick={addMilestone}
-                className="mt-3 flex items-center gap-1.5 text-sm font-medium text-brand-400 hover:text-brand-300 transition-colors"
-              >
-                <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor">
+              <button type="button" onClick={addMilestone} className="mt-3 flex items-center gap-1.5 text-sm font-medium text-brand-400 hover:text-brand-300 transition-colors">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
                   <path d="M8 2a.75.75 0 01.75.75v4.5h4.5a.75.75 0 010 1.5h-4.5v4.5a.75.75 0 01-1.5 0v-4.5h-4.5a.75.75 0 010-1.5h4.5v-4.5A.75.75 0 018 2z" />
                 </svg>
                 Add milestone
               </button>
             </div>
 
-            {/* Total + Submit */}
+            {/* Total + submit */}
             <div className="pt-4 border-t border-white/[0.06]">
               <div className="flex items-center justify-between mb-5">
                 <span className="text-sm text-gray-500">Total to deposit</span>
@@ -284,20 +334,19 @@ export default function CreateContractForm() {
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4l3-3-3-3v4a8 8 0 00-8 8h4z" />
                     </svg>
-                    Submitting…
+                    Submitting transaction…
                   </>
                 ) : (
                   <>
                     <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
                       <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
                     </svg>
-                    Create &amp; Deposit
+                    Create &amp; Deposit into Escrow
                   </>
                 )}
               </button>
-
               <p className="mt-3 text-center text-xs text-gray-600">
-                Secured by Starknet · Gas paid via your connected wallet
+                Secured by Starknet · Funds are locked until you approve milestones
               </p>
             </div>
           </form>

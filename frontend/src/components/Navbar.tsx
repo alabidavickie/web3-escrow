@@ -31,17 +31,22 @@ export default function Navbar() {
         <div className="flex items-center justify-between h-16">
           <Logo />
 
-          {/* Desktop nav links */}
-          <div className="hidden md:flex items-center gap-8">
+          {/* Desktop links */}
+          <div className="hidden md:flex items-center gap-6">
             {isLanding ? (
               <>
-                <a href="#features" className="text-sm font-medium text-gray-400 hover:text-gray-100 transition-colors">Features</a>
+                <a href="#features"    className="text-sm font-medium text-gray-400 hover:text-gray-100 transition-colors">Features</a>
                 <a href="#how-it-works" className="text-sm font-medium text-gray-400 hover:text-gray-100 transition-colors">How it works</a>
+                <Link to="/jobs"       className="text-sm font-medium text-gray-400 hover:text-gray-100 transition-colors">Job board</Link>
               </>
             ) : (
               <>
+                <Link to="/jobs"       className="text-sm font-medium text-gray-400 hover:text-gray-100 transition-colors">Job board</Link>
                 {authenticated && (
                   <Link to="/dashboard" className="text-sm font-medium text-gray-400 hover:text-gray-100 transition-colors">Dashboard</Link>
+                )}
+                {authenticated && profile?.role === 'client' && (
+                  <Link to="/jobs/post" className="text-sm font-medium text-gray-400 hover:text-gray-100 transition-colors">Post a job</Link>
                 )}
                 {authenticated && profile?.role === 'client' && (
                   <Link to="/dashboard/create" className="text-sm font-medium text-gray-400 hover:text-gray-100 transition-colors">New contract</Link>
@@ -54,14 +59,10 @@ export default function Navbar() {
           <div className="hidden md:flex items-center gap-2">
             <SignInButton variant="light" size="sm" />
             {!authenticated && (
-              <Link to="/login" className="btn-primary py-2 text-xs">
-                Get started free
-              </Link>
+              <Link to="/login" className="btn-primary py-2 text-xs">Get started free</Link>
             )}
             {authenticated && profile && (
-              <Link to="/dashboard" className="btn-primary py-2 text-xs">
-                Dashboard
-              </Link>
+              <Link to="/dashboard" className="btn-primary py-2 text-xs">Dashboard</Link>
             )}
           </div>
 
@@ -70,7 +71,6 @@ export default function Navbar() {
             onClick={() => setMenuOpen(v => !v)}
             className="md:hidden p-2 rounded-lg text-gray-400 hover:text-gray-100 hover:bg-white/5 transition-colors"
             aria-label="Toggle menu"
-            aria-expanded={menuOpen}
           >
             {menuOpen ? (
               <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
@@ -87,27 +87,26 @@ export default function Navbar() {
         {/* Mobile menu */}
         {menuOpen && (
           <div className="md:hidden pb-4 pt-2 border-t border-white/[0.06] space-y-1 animate-fade-in">
-            {isLanding ? (
+            <Link to="/jobs" onClick={() => setMenuOpen(false)} className="block px-3 py-2 rounded-lg text-sm font-medium text-gray-400 hover:bg-white/5 hover:text-gray-100 transition-colors">Job board</Link>
+            {isLanding && (
               <>
-                <a href="#features" onClick={() => setMenuOpen(false)} className="block px-3 py-2 rounded-lg text-sm font-medium text-gray-400 hover:bg-white/5 hover:text-gray-100 transition-colors">Features</a>
+                <a href="#features"     onClick={() => setMenuOpen(false)} className="block px-3 py-2 rounded-lg text-sm font-medium text-gray-400 hover:bg-white/5 hover:text-gray-100 transition-colors">Features</a>
                 <a href="#how-it-works" onClick={() => setMenuOpen(false)} className="block px-3 py-2 rounded-lg text-sm font-medium text-gray-400 hover:bg-white/5 hover:text-gray-100 transition-colors">How it works</a>
               </>
-            ) : (
+            )}
+            {authenticated && (
+              <Link to="/dashboard" onClick={() => setMenuOpen(false)} className="block px-3 py-2 rounded-lg text-sm font-medium text-gray-400 hover:bg-white/5 hover:text-gray-100 transition-colors">Dashboard</Link>
+            )}
+            {authenticated && profile?.role === 'client' && (
               <>
-                {authenticated && (
-                  <Link to="/dashboard" onClick={() => setMenuOpen(false)} className="block px-3 py-2 rounded-lg text-sm font-medium text-gray-400 hover:bg-white/5 hover:text-gray-100 transition-colors">Dashboard</Link>
-                )}
-                {authenticated && profile?.role === 'client' && (
-                  <Link to="/dashboard/create" onClick={() => setMenuOpen(false)} className="block px-3 py-2 rounded-lg text-sm font-medium text-gray-400 hover:bg-white/5 hover:text-gray-100 transition-colors">New contract</Link>
-                )}
+                <Link to="/jobs/post"        onClick={() => setMenuOpen(false)} className="block px-3 py-2 rounded-lg text-sm font-medium text-gray-400 hover:bg-white/5 hover:text-gray-100 transition-colors">Post a job</Link>
+                <Link to="/dashboard/create" onClick={() => setMenuOpen(false)} className="block px-3 py-2 rounded-lg text-sm font-medium text-gray-400 hover:bg-white/5 hover:text-gray-100 transition-colors">New contract</Link>
               </>
             )}
             <div className="pt-3 flex flex-col gap-2 px-3">
               <SignInButton variant="light" size="sm" className="w-full" />
               {!authenticated && (
-                <Link to="/login" className="btn-primary w-full text-center" onClick={() => setMenuOpen(false)}>
-                  Get started free
-                </Link>
+                <Link to="/login" className="btn-primary w-full text-center" onClick={() => setMenuOpen(false)}>Get started free</Link>
               )}
             </div>
           </div>
