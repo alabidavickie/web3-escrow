@@ -41,15 +41,13 @@ export default function Navbar() {
               </>
             ) : (
               <>
-                <Link to="/jobs"       className="text-sm font-medium text-gray-400 hover:text-gray-100 transition-colors">Job board</Link>
+                <Link to="/jobs"         className="text-sm font-medium text-gray-400 hover:text-gray-100 transition-colors">Jobs</Link>
+                <Link to="/freelancers" className="text-sm font-medium text-gray-400 hover:text-gray-100 transition-colors">Freelancers</Link>
                 {authenticated && (
                   <Link to="/dashboard" className="text-sm font-medium text-gray-400 hover:text-gray-100 transition-colors">Dashboard</Link>
                 )}
                 {authenticated && profile?.role === 'client' && (
                   <Link to="/jobs/post" className="text-sm font-medium text-gray-400 hover:text-gray-100 transition-colors">Post a job</Link>
-                )}
-                {authenticated && profile?.role === 'client' && (
-                  <Link to="/dashboard/create" className="text-sm font-medium text-gray-400 hover:text-gray-100 transition-colors">New contract</Link>
                 )}
               </>
             )}
